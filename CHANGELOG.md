@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.16 (2026-11-10)
+
+- The macOS 26.7.3 developer beta (25G416) is allow-listed. Its kernel is xnu-12377.161.15.702.13~1, newer than the one 25G332 and the 26.7.3 release (25G342) share, so 0.4.15 stayed out there and the driver fell back to its Ethernet front end with nothing joined. The kcabi dump of 25G416 has the same instance sizes, 50 vtables and request tables as 25G342. Of 2324 compared functions 94 differ: 58 in addresses only, 36 in a log line number, and one, `IO80211InfraInterface::updateCountryCodeProperty`, gained a call to `IO80211_io80211isSensitiveInfoAllowed`, which this kext does not depend on.
+- No code change. The headers in `abi/25G416/` differ from 25G332's only in the build name.
+- Booted on 25G416 on the Legion 5 with MtkWlan 0.12.1: the native interface came up, macOS joined the saved network at boot, `wdutil info` shows 5g44/80, 11ac, 866 Mbps.
+- README: on a build the kext does not know, macOS joins nothing by itself. `sudo mtkwifi join` brings the saved network back on the Ethernet front end.
+
 ## 0.4.15 (2026-10-31)
 
 - Link quality goes to macOS. The interface now calls `setLQM` (slot 378, which ends in `IOSkywalkNetworkInterface::reportLinkQuality`) once a second while associated: 100 at -75 dBm or better, 50 down to -85 dBm, 20 below that, and -1 (unknown) when the link drops. Before, `State:/Network/Interface/en1/LinkQuality` was never set, apsd logged `isBadLQ? YES` and `Push is connected? NO`, so Apple push, and with it iMessage, FaceTime and Handoff, did not connect over Wi-Fi. Lead from the 2026-10-31 research run (an itlwm fork calls it the same way); checked live on the Legion before the change.

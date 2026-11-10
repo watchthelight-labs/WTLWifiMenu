@@ -11,8 +11,10 @@ System Settings, scans and joins run by macOS, saved networks, auto-join at boot
 data path on Skywalk. You don't need a client app or the command line. The driver still owns the hardware (firmware, DMA, scan,
 association, WPA2) and this kext talks to it through a C ops table (`MtkCoreApi.h`), not through C++ linking.
 
-It is built against two macOS builds, Tahoe 26.7.1 (25G241) and 26.7.2 (25G332), and refuses to load on any other, so a wrong build can
-never take your network away: the driver falls back to its Ethernet front end by itself.
+It is built against Tahoe 26.7.1 (25G241), 26.7.2 (25G332), 26.7.3 (25G342) and the 26.7.3 developer beta 25G416, and
+refuses to load on any other build. The driver then falls back to its Ethernet front end by itself. On that fallback
+macOS does not join anything on its own: run `sudo mtkwifi join` to get the saved network back until a kext for the
+new build is out.
 
 ## The MT7925 set
 
@@ -28,10 +30,11 @@ carries both Wi-Fi kexts with an `INSTALL.md`. A complete EFI that uses the set:
 
 ## Status
 
-Tested by me on one laptop (Legion 5 15IAX10, MT7925, OpenCore 1.0.8) on macOS 26.7.1 (25G241) with MtkWlan 0.12.1 and this kext at 0.4.13, and on 26.7.2 (25G332) with 0.4.14 (2026-10-28: the native interface came up at boot and joined the saved network on its own) and 0.4.15 (2026-10-31).
+Tested by me on one laptop (Legion 5 15IAX10, MT7925, OpenCore 1.0.8) on macOS 26.7.1 (25G241) with MtkWlan 0.12.1 and this kext at 0.4.13, and on 26.7.2 (25G332) with 0.4.14 (2026-10-28: the native interface came up at boot and joined the saved network on its own) and 0.4.15 (2026-10-31), on 26.7.3 (25G342) with 0.4.15, and on the 26.7.3 developer beta (25G416) with 0.4.16 (2026-11-10).
 
 | Version | What it does | Result |
 |---|---|---|
+| 0.4.16 | allow-list and headers for the 26.7.3 developer beta (25G416); same code as 0.4.15 | joins the saved network at boot on 25G416, 5g44/80 at 866 Mbps |
 | 0.4.15 | link quality to macOS (`setLQM`), real width for every scan result, the AP's country code, HT and VHT maps in the extended BSS info | `LinkQuality : 100` for en1, apsd `isBadLQ? NO` and a push received over Wi-Fi (before, push never connected, so iMessage, FaceTime and Handoff did not work on this card); Country Code US instead of XZ; scan results at 5 GHz/80 MHz instead of 20 |
 | 0.4.13 | real width, MCS, streams, guard interval and rate in the Wi-Fi details (needs MtkWlan 0.12.1); country code goes to the core; a refused private address is retried | `wdutil info` shows PHY 11ac, 5g100/80, MCS 9, NSS 2, guard interval 400, 866 Mbps; joins at boot |
 | 0.4.12 | pairs with MtkWlan 0.12.0 (link supervisor reset comes back through the restored-link path); 128 networks to the menu | booted together with 0.4.13, joins at boot |
@@ -59,13 +62,16 @@ is ranked "Never" until you log in, as on a real Mac.
 ## Requirements
 
 - MtkWlan 0.11.1 or later (0.11.0 works but can lose the start-up race, see the changelog) installed and working with its Ethernet front end first (core ops table v4).
-- macOS 26.7.1 (25G241) or 26.7.2 (25G332). The kext is built against those builds' class layouts and vtable slots and
+- macOS 26.7.1 (25G241), 26.7.2 (25G332), 26.7.3 (25G342) or the 26.7.3 developer beta 25G416. The kext is built against those builds' class layouts and vtable slots and
   refuses to load on any other build (`MtkNativeAbi` in `Info.plist` lists the builds it was generated for). For another build,
   see "Building".
   25G332 support is new in 0.4.14. Its class sizes, vtables and request slots are identical to 25G241's (the
   headers in `abi/25G332/` differ only in the build name), so the same binary serves both. On 0.4.13 and older the kext
   stays out on 26.7.2 and MtkWlan falls back to its Ethernet port
   ([#4](https://github.com/watchthelight-labs/WTLMtkWireless/issues/4)).
+  The kext matches a build by its kernel version. 26.7.3 (25G342) has the same kernel as 25G332, so 0.4.14 and later
+  load there unchanged. The beta 25G416 has a newer kernel and needs 0.4.16; its sizes, vtables and request slots are
+  the same again.
 
 ## Installation
 
@@ -120,7 +126,7 @@ testers are in [its issue #2](https://github.com/watchthelight-labs/WTLMtkWirele
 
 ## Building
 
-`./build.sh` compiles against the Command Line Tools SDK with the ABI headers in `abi/<build>/` (25G241 and 25G332 ship here). Those headers are
+`./build.sh` compiles against the Command Line Tools SDK with the ABI headers in `abi/<build>/` (25G241, 25G332 and 25G416 ship here). Those headers are
 generated from a dump of the macOS build's kernel collection (class sizes, vtables, the 200 request slots the Family
 routes ioctls to); `tools/kcabi/dump.py` makes that dump on the target machine and `tools/kcabi/genhdr.py gen` turns it
 into headers for another build. The build script then checks that every override sits on Apple's slot and that every
