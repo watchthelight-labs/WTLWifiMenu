@@ -7,7 +7,7 @@ The kext stops assuming an MT7925. With MtkWlan 0.13.0 it asks the driver (core 
 - The hardware name (`IO80211HardwareVersion`, System Information) is "MediaTek" plus the chip name from the driver.
 - The HT and VHT maps in the association details use the driver's stream count.
 - The band of each supported channel and of the current channel comes from the driver, not from the channel number.
-- With an older MtkWlan (0.12.x and before) it assumes what it did before: MT7925, two streams, 2.4 and 5 GHz, 80 MHz. That path was not booted with this version.
+- With an older MtkWlan (0.12.x and before) it assumes what it did before: MT7925, two streams, 2.4 and 5 GHz, 80 MHz. That path was booted once after the release, with `mtknativeops=5` against MtkWlan 0.13.0 (not with a real 0.12.x driver): same channel list, name and link.
 - New properties: `MtkNativeCoreOps` (the API version in use) and `MtkNativeChip`. Boot-arg `mtknativeops=N` stops at an older API version, for tests.
 - Not yet: a 6 GHz channel is left out of the list and a 160 MHz link shows as 80 MHz. No driver offers either today, and Apple's channel flags for both are not confirmed yet.
 - Booted on 25G416 on the Legion 5 with MtkWlan 0.13.0: `MtkNativeCoreOps` 6, the supported channel list and the hardware name identical to 0.4.16, `wdutil info` shows 5g44/80, 11ac, 866 Mbps.
