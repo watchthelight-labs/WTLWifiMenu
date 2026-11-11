@@ -1,5 +1,7 @@
 # WTLWifiMenu: the native Wi-Fi menu for the MediaTek MT7925 on macOS Hackintosh
 
+> **Moved to [WTLWireless](https://github.com/watchthelight-labs/WTLWireless) (2026-11-10).** From WTLWireless 0.14.0 `MtkWlanNative.kext` is part of one kext, as `WTLWireless.kext/Contents/PlugIns/WTLWirelessNative.kext`, with the same code under a new name. New releases, the install guide and the issues are there; moving over means swapping the `config.plist` entries ([steps](https://github.com/watchthelight-labs/WTLWireless#coming-from-the-three-old-kexts)). This repository is archived. Its releases stay available: 0.4.17 is the last one here and pairs with MtkWlan 0.13.0. The text below describes that last release.
+
 Renamed from `mt7925-hackintosh-wifi-native` on 2026-10-31; the kext is still `MtkWlanNative.kext`, so existing OpenCore configs keep working. Old links redirect here.
 
 The native Wi-Fi menu for the MediaTek MT7925 (Filogic 360, Wi-Fi 7, PCI `14C3:7925`, AMD RZ717 `14C3:0717`) on a
