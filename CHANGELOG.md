@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.4.17 (2026-11-10)
+
+The kext stops assuming an MT7925. With MtkWlan 0.13.0 it asks the driver (core API version 6) and reports what it is told. On an MT7925 macOS sees the same as before.
+
+- The hardware name (`IO80211HardwareVersion`, System Information) is "MediaTek" plus the chip name from the driver.
+- The HT and VHT maps in the association details use the driver's stream count.
+- The band of each supported channel and of the current channel comes from the driver, not from the channel number.
+- With an older MtkWlan (0.12.x and before) it assumes what it did before: MT7925, two streams, 2.4 and 5 GHz, 80 MHz. That path was not booted with this version.
+- New properties: `MtkNativeCoreOps` (the API version in use) and `MtkNativeChip`. Boot-arg `mtknativeops=N` stops at an older API version, for tests.
+- Not yet: a 6 GHz channel is left out of the list and a 160 MHz link shows as 80 MHz. No driver offers either today, and Apple's channel flags for both are not confirmed yet.
+- Booted on 25G416 on the Legion 5 with MtkWlan 0.13.0: `MtkNativeCoreOps` 6, the supported channel list and the hardware name identical to 0.4.16, `wdutil info` shows 5g44/80, 11ac, 866 Mbps.
+
 ## 0.4.16 (2026-11-10)
 
 - The macOS 26.7.3 developer beta (25G416) is allow-listed. Its kernel is xnu-12377.161.15.702.13~1, newer than the one 25G332 and the 26.7.3 release (25G342) share, so 0.4.15 stayed out there and the driver fell back to its Ethernet front end with nothing joined. The kcabi dump of 25G416 has the same instance sizes, 50 vtables and request tables as 25G342. Of 2324 compared functions 94 differ: 58 in addresses only, 36 in a log line number, and one, `IO80211InfraInterface::updateCountryCodeProperty`, gained a call to `IO80211_io80211isSensitiveInfoAllowed`, which this kext does not depend on.

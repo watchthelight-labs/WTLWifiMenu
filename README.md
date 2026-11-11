@@ -34,6 +34,7 @@ Tested by me on one laptop (Legion 5 15IAX10, MT7925, OpenCore 1.0.8) on macOS 2
 
 | Version | What it does | Result |
 |---|---|---|
+| 0.4.17 | chip name, stream count and channel bands come from the driver (MtkWlan 0.13.0, core API v6); nothing hard-codes an MT7925 any more | same channel list, name and link as 0.4.16 on 25G416; `MtkNativeCoreOps` 6 |
 | 0.4.16 | allow-list and headers for the 26.7.3 developer beta (25G416); same code as 0.4.15 | joins the saved network at boot on 25G416, 5g44/80 at 866 Mbps |
 | 0.4.15 | link quality to macOS (`setLQM`), real width for every scan result, the AP's country code, HT and VHT maps in the extended BSS info | `LinkQuality : 100` for en1, apsd `isBadLQ? NO` and a push received over Wi-Fi (before, push never connected, so iMessage, FaceTime and Handoff did not work on this card); Country Code US instead of XZ; scan results at 5 GHz/80 MHz instead of 20 |
 | 0.4.13 | real width, MCS, streams, guard interval and rate in the Wi-Fi details (needs MtkWlan 0.12.1); country code goes to the core; a refused private address is retried | `wdutil info` shows PHY 11ac, 5g100/80, MCS 9, NSS 2, guard interval 400, 866 Mbps; joins at boot |
