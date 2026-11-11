@@ -4,7 +4,7 @@
 // ga403wm-hackintosh kexts/itlmt7925Native/itlmt7925_wifi.cpp (BSD-3-Clause-Clear, Copyright (c) 2026 thanhnndev and
 // contributors); every offset was re-read in the 25G241 dump (the kcabi dump of 25G241) before use.
 #include "MtkWlanNative.hpp"
-#define MTK_NATIVE_VERSION "0.4.16"   // also Info.plist (build.sh checks they match)
+#define MTK_NATIVE_VERSION "0.4.17"   // also Info.plist (build.sh checks they match)
 #include "MtkWlanNativeIf.hpp"
 #include "MtkNativeAbi.hpp"
 #include "MtkNativeTrace.hpp"
@@ -167,17 +167,33 @@ bool MtkWlanNative::makeFaultReporter(IOService *owner) {
 bool MtkWlanNative::start(IOService *provider) {
     nativeCallInit();
     nativeTrace(this, "ctl:start");
-    // v5 (0.12.1) adds the rate details and the country code, v4 (0.11.0) set_mac; a v3 core (0.10.0) still works
-    if (provider && provider->callPlatformFunction(MTK_CORE_OPS_V5, false, (void *)&ops5, &core, nullptr, nullptr) == kIOReturnSuccess &&
-        ops5 && core && ops5->v4.v3.v2.v1.version == MTK_CORE_API_V5 && ops5->v4.v3.v2.v1.size >= sizeof(mtk_core_ops_v5)) {
+    // v6 (0.13.0) adds chip facts and channels with a band, v5 (0.12.1) the rate details and the country code, v4 (0.11.0)
+    // set_mac; a v3 core (0.10.0) still works. Boot-arg mtknativeops=N stops at version N, to test the fallbacks.
+    uint32_t maxOps = 6;
+    PE_parse_boot_argn("mtknativeops", &maxOps, sizeof(maxOps));
+    if (maxOps >= 6 && provider &&
+        provider->callPlatformFunction(MTK_CORE_OPS_V6, false, (void *)&ops6, &core, nullptr, nullptr) == kIOReturnSuccess &&
+        ops6 && core && ops6->v5.v4.v3.v2.v1.version == MTK_CORE_API_V6 && ops6->v5.v4.v3.v2.v1.size >= sizeof(mtk_core_ops_v6)) {
+        ops5 = &ops6->v5;
         ops4 = &ops5->v4;
         ops = &ops4->v3;
     } else {
-        ops5 = nullptr;
+        ops6 = nullptr;
         core = nullptr;
     }
     if (!ops) {
-        if (provider && provider->callPlatformFunction(MTK_CORE_OPS_V4, false, (void *)&ops4, &core, nullptr, nullptr) == kIOReturnSuccess &&
+        if (maxOps >= 5 && provider &&
+            provider->callPlatformFunction(MTK_CORE_OPS_V5, false, (void *)&ops5, &core, nullptr, nullptr) == kIOReturnSuccess &&
+            ops5 && core && ops5->v4.v3.v2.v1.version == MTK_CORE_API_V5 && ops5->v4.v3.v2.v1.size >= sizeof(mtk_core_ops_v5)) {
+            ops4 = &ops5->v4;
+            ops = &ops4->v3;
+        } else {
+            ops5 = nullptr;
+            core = nullptr;
+        }
+    }
+    if (!ops) {
+        if (maxOps >= 4 && provider && provider->callPlatformFunction(MTK_CORE_OPS_V4, false, (void *)&ops4, &core, nullptr, nullptr) == kIOReturnSuccess &&
             ops4 && core && ops4->v3.v2.v1.version == MTK_CORE_API_V4 && ops4->v3.v2.v1.size >= sizeof(mtk_core_ops_v4)) {
             ops = &ops4->v3;
         } else {
@@ -191,7 +207,27 @@ bool MtkWlanNative::start(IOService *provider) {
         declineCore(provider, "no core ops v3");
         return false;
     }
-    nativeTrace(this, "ctl:core ops v%u", ops5 ? 5u : ops4 ? 4u : 3u);
+    const uint32_t opsVer = ops6 ? 6u : ops5 ? 5u : ops4 ? 4u : 3u;
+    nativeTrace(this, "ctl:core ops v%u", opsVer);
+    // what the chip is: from a v6 core, else what every older core drives (MT7925, two streams, 2.4 and 5 GHz, 80 MHz)
+    bzero(&chipInfo, sizeof(chipInfo));
+    chipInfo.size = sizeof(chipInfo);
+    if (!ops6 || ops6->get_chip_info(core, &chipInfo) != 0 || !chipInfo.name[0] || !chipInfo.nss) {
+        bzero(&chipInfo, sizeof(chipInfo));
+        chipInfo.chip_id = 0x7925;
+        strlcpy(chipInfo.name, "MT7925", sizeof(chipInfo.name));
+        chipInfo.bands = MTK_CAP_2G | MTK_CAP_5G;
+        chipInfo.nss = 2;
+        chipInfo.max_bw = MTK_BW_80;
+    }
+    chipInfo.name[sizeof(chipInfo.name) - 1] = 0;
+    {
+        char s[96];
+        snprintf(s, sizeof(s), "%s, bands %u, %u streams, width %u, core ops v%u", chipInfo.name, chipInfo.bands, chipInfo.nss,
+                 chipInfo.max_bw, opsVer);
+        setProperty("MtkNativeChip", s);
+        setProperty("MtkNativeCoreOps", (uint64_t)opsVer, 32);
+    }
     if (ops->v2.v1.get_mac(core, mac) != 0) {
         nativeTrace(this, "ctl:no station address");
         declineCore(provider, "no station address");
@@ -396,7 +432,9 @@ IOReturn MtkWlanNative::getDRIVER_VERSION(IO80211SkywalkInterface *, apple80211_
 
 IOReturn MtkWlanNative::getHARDWARE_VERSION(IO80211SkywalkInterface *, apple80211_version_data *d) {
     nativeCall(this, 'C', 0x2c);
-    return fillVersion(d, "MediaTek MT7925");
+    char s[32];
+    snprintf(s, sizeof(s), "MediaTek %s", chipInfo.name);
+    return fillVersion(d, s);
 }
 
 // apple80211_capability_data: u32 version at +0, then a capability bit array. Only what Apple's own handler stores without

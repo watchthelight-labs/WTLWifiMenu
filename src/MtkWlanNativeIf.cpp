@@ -89,6 +89,7 @@ bool MtkWlanNativeIf::startWithInfo(MtkWlanNative *controller, IOSkywalkEthernet
     ops = controller->coreOps();
     ops4 = controller->coreOps4();
     ops5 = controller->coreOps5();
+    ops6 = controller->coreOps6();
     core = controller->coreHandle();
     coreLoop = controller->coreLoop();
     if (coreLoop) coreLoop->retain();

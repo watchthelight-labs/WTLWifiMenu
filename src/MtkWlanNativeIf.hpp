@@ -99,6 +99,8 @@ private:
     const mtk_core_ops_v3 *ops = nullptr;
     const mtk_core_ops_v4 *ops4 = nullptr;   // the same table as ops, with set_mac (version 4 of the core API)
     const mtk_core_ops_v5 *ops5 = nullptr;   // the same table again, with the rate details (version 5, core 0.12.1)
+    const mtk_core_ops_v6 *ops6 = nullptr;   // and with chip facts and channel bands (version 6, core 0.13.0)
+    bool linkChan(mtk_chan *c);
     bool rateInfo(mtk_rate_info *r);
     void *core = nullptr;
     uint8_t curMac[6] = {};                  // the last address the Family set through slot 470 (trace only)

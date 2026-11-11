@@ -19,19 +19,41 @@ inline T load(const void *d, size_t off) { T v; memcpy(&v, (const uint8_t *)d + 
 // what Apple's getRSSI / getRATE return while not associated, and getCHANNEL while no current channel can be read
 const IOReturn kNotAssociated = (IOReturn)0xe0822403;
 const IOReturn kNoChannel = (IOReturn)0xe0822801;
-// apple80211_channel flags: band 0x8 = 2.4 GHz, 0x10 = 5 GHz; 0x2 = 20 MHz; 0x80 = active scan allowed
-inline uint32_t channelFlags(uint32_t ch) { return (ch > 14 ? 0x10u : 0x8u) | 0x2u; }
+// apple80211_channel flags: band 0x8 = 2.4 GHz, 0x10 = 5 GHz; 0x2 = 20 MHz; 0x80 = active scan allowed.
+// 0 for 6 GHz: Apple's flag for it is not read from ChanSpecConvToApple80211Channel yet, so such a channel is left out.
+inline uint32_t bandFlag(uint8_t band) { return band == MTK_CHAN_2G ? 0x8u : band == MTK_CHAN_5G ? 0x10u : 0u; }
 // the current channel as ChanSpecConvToApple80211Channel writes it (25G241): 0x4 40 MHz (+0x200 extension above),
-// 0x400 80 MHz, 0x100 DFS (52-144)
-inline uint32_t linkChannelFlags(const mtk_link_info &li) {
-    uint32_t f = li.channel > 14 ? 0x10u : 0x8u;
-    if (li.channel >= 52 && li.channel <= 144) f |= 0x100;
-    if (li.bw == 2) f |= 0x400;
-    else if (li.bw == 1) f |= 0x4u | (li.center > li.channel ? 0x200u : 0u);
+// 0x400 80 MHz, 0x100 DFS. 160 MHz is shown as 80 for the same reason as 6 GHz above.
+inline uint32_t linkChannelFlags(const mtk_chan &c) {
+    uint32_t f = bandFlag(c.band);
+    if (c.flags & MTK_CHAN_F_DFS) f |= 0x100;
+    if (c.bw >= MTK_BW_80) f |= 0x400;
+    else if (c.bw == MTK_BW_40) f |= 0x4u | (c.center > c.chan ? 0x200u : 0u);
     else f |= 0x2;
     return f;
 }
+// our RX VHT MCS map: MCS 0-9 on each of nss streams, none above (two streams: 0xfffa)
+inline uint16_t vhtOurMap(uint8_t nss) {
+    uint16_t m = 0xffff;
+    for (uint8_t s = 0; s < nss && s < 8; s++) m = (uint16_t)((m & ~(3u << (2 * s))) | (2u << (2 * s)));
+    return m;
+}
 } // namespace
+
+// The channel of the association with its band: from a v6 core, else worked out from the number as before
+bool MtkWlanNativeIf::linkChan(mtk_chan *c) {
+    bzero(c, sizeof(*c));
+    if (!linkUp()) return false;
+    if (ops6) return ops6->get_link_chan(core, c) == 0;
+    mtk_link_info li;
+    if (ops->v2.v1.get_link_info(core, &li) != 0 || !li.up) return false;
+    c->band = li.channel > 14 ? MTK_CHAN_5G : MTK_CHAN_2G;
+    c->bw = li.bw;
+    c->chan = li.channel;
+    c->center = li.center;
+    if (li.channel >= 52 && li.channel <= 144) c->flags = MTK_CHAN_F_DFS;
+    return true;
+}
 
 // the core's rate details (v5 core) while associated
 bool MtkWlanNativeIf::rateInfo(mtk_rate_info *r) {
@@ -44,12 +66,12 @@ bool MtkWlanNativeIf::rateInfo(mtk_rate_info *r) {
 IOReturn MtkWlanNativeIf::getCHANNEL(apple80211_channel_data *d) {
     nativeCall(ctl, 'S', 471);
     if (!d) return kIOReturnBadArgument;
-    mtk_link_info li;
-    if (!linkUp() || ops->v2.v1.get_link_info(core, &li) != 0 || !li.up) return kNoChannel;
+    mtk_chan c;
+    if (!linkChan(&c) || !bandFlag(c.band)) return kNoChannel;
     store<uint32_t>(d, 0, 1);
     store<uint32_t>(d, 4, 1);
-    store<uint32_t>(d, 8, li.channel);
-    store<uint32_t>(d, 12, linkChannelFlags(li));
+    store<uint32_t>(d, 8, c.chan);
+    store<uint32_t>(d, 12, linkChannelFlags(c));
     return kIOReturnSuccess;
 }
 
@@ -160,30 +182,43 @@ IOReturn MtkWlanNativeIf::setINFRA_ENUMERATED(apple80211_infra_enumerated *d) {
 // apple80211_sup_channel_data: u32 version (1), u32 count, then 12-byte apple80211_channel entries {version 1, channel, flags};
 // the channels come from the core's regulatory domain (every entry is one the core scans and joins)
 namespace {
-IOReturn fillChannels(MtkWlanNativeIf *, const mtk_core_ops_v3 *ops, void *core, void *d) {
+IOReturn fillChannels(const mtk_core_ops_v3 *ops, const mtk_core_ops_v6 *ops6, void *core, void *d) {
     if (!d) return kIOReturnBadArgument;
-    uint8_t list[64];
+    mtk_chan list[64];
     uint32_t n = 0;
-    if (ops->get_channels(core, list, sizeof(list), &n) != 0) n = 0;
-    store<uint32_t>(d, 0, 1);
-    store<uint32_t>(d, 4, n);
-    for (uint32_t i = 0; i < n; i++) {
-        store<uint32_t>(d, 8 + 12 * i, 1);
-        store<uint32_t>(d, 8 + 12 * i + 4, list[i]);
-        store<uint32_t>(d, 8 + 12 * i + 8, channelFlags(list[i]) | 0x80u);
+    if (ops6) {
+        if (ops6->get_channels2(core, list, 64, &n) != 0) n = 0;
+    } else {
+        uint8_t old[64];
+        if (ops->get_channels(core, old, sizeof(old), &n) != 0) n = 0;
+        for (uint32_t i = 0; i < n; i++) {
+            list[i].band = old[i] > 14 ? MTK_CHAN_5G : MTK_CHAN_2G;
+            list[i].chan = old[i];
+        }
     }
+    uint32_t k = 0;
+    for (uint32_t i = 0; i < n && i < 64; i++) {
+        const uint32_t band = bandFlag(list[i].band);
+        if (!band) continue;
+        store<uint32_t>(d, 8 + 12 * k, 1);
+        store<uint32_t>(d, 8 + 12 * k + 4, list[i].chan);
+        store<uint32_t>(d, 8 + 12 * k + 8, band | 0x2u | 0x80u);
+        k++;
+    }
+    store<uint32_t>(d, 0, 1);
+    store<uint32_t>(d, 4, k);
     return kIOReturnSuccess;
 }
 } // namespace
 
 IOReturn MtkWlanNativeIf::getSUPPORTED_CHANNELS(apple80211_sup_channel_data *d) {
     nativeCall(ctl, 'S', 477);
-    return fillChannels(this, ops, core, d);
+    return fillChannels(ops, ops6, core, d);
 }
 
 IOReturn MtkWlanNativeIf::getHW_SUPPORTED_CHANNELS(apple80211_sup_channel_data *d) {
     nativeCall(ctl, 'S', 496);
-    return fillChannels(this, ops, core, d);
+    return fillChannels(ops, ops6, core, d);
 }
 
 // Slot 470 on 25G241: setMacAddress(mloAddrArray&). The Family's IO80211MacAddressAgent builds the array on its stack
@@ -562,9 +597,9 @@ IOReturn MtkWlanNativeIf::getWCL_EXTENDED_BSS_INFO(apple80211_extended_bss_info 
                     store<uint32_t>(b, 8 + 12 * nrates + 8, (uint32_t)(v[k] >> 7));
                 }
             } else if (id == 45 && l >= 13) {                                         // HT Capabilities: RX MCS set
-                for (int k = 0; k < 10; k++) b[0xbc + 4 + k] = k < 2 ? v[3 + k] : 0;  // two streams here
+                for (int k = 0; k < 10; k++) b[0xbc + 4 + k] = k < ctl->chip().nss ? v[3 + k] : 0;   // one byte per stream
             } else if (id == 191 && l >= 12 && curBss->channel > 14) {               // VHT Capabilities: RX MCS map
-                store<uint16_t>(b, 0xcc + 4, vhtMapAnd(load<uint16_t>(v, 4), 0xfffa)); // ours: 2 streams, MCS 0-9
+                store<uint16_t>(b, 0xcc + 4, vhtMapAnd(load<uint16_t>(v, 4), vhtOurMap(ctl->chip().nss)));
             } else if (id == 0x30 && !rsnLen && l + 2u <= 0x101) {                   // RSN
                 memcpy(b + 0x113, ie + p, l + 2u);
                 rsnLen = l + 2u;

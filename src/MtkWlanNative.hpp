@@ -58,6 +58,8 @@ public:
     const mtk_core_ops_v3 *coreOps() const { return ops; }
     const mtk_core_ops_v4 *coreOps4() const { return ops4; }   // null on a v3 core (0.10.0): no set_mac
     const mtk_core_ops_v5 *coreOps5() const { return ops5; }   // null before core 0.12.1: no rate details, no country
+    const mtk_core_ops_v6 *coreOps6() const { return ops6; }   // null before core 0.13.0: no chip info, no channel bands
+    const mtk_chip_info &chip() const { return chipInfo; }     // from the core, or the MT7925 values an older core implies
     void *coreHandle() const { return core; }
     IOWorkLoop *coreLoop() const { return provLoop; }
     const uint8_t *stationAddress() const { return mac; }
@@ -73,6 +75,8 @@ private:
     const mtk_core_ops_v3 *ops = nullptr;
     const mtk_core_ops_v4 *ops4 = nullptr;
     const mtk_core_ops_v5 *ops5 = nullptr;
+    const mtk_core_ops_v6 *ops6 = nullptr;
+    mtk_chip_info chipInfo = {};
     void *core = nullptr;
     IOWorkLoop *provLoop = nullptr;         // the core's work loop (retained)
     IOWorkLoop *ownLoop = nullptr;          // fallback when the provider has none
